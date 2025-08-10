@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Grey Mesh Auto-Scroll Showcase — Reliable Start</title>
+<style>
+  :root{ --fg:#fff; --muted:#111; }
+  html,body{
+    height:100%;
+    margin:0;
+    background:transparent;
+    font-family: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+    color:var(--fg);
+    overflow-x:hidden;
+  }
+
+  /* canvas background */
+  #neural-bg {
+    position:fixed; inset:0; z-index:-2;
+    background:#888888; /* grey */
+    display:block;
+  }
+  .bg-overlay {
+    position:fixed; inset:0; z-index:-1;
+    background: linear-gradient(180deg, rgba(0,0,0,0.06), rgba(0,0,0,0.12));
+    pointer-events:none;
+  }
+
+  /* sections */
+  section{
+    height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+  }
+
+  .cutout{
+    display:block;
+    max-height:60vh;
+    border:8px solid #fff;
+    border-radius:16px;
+    background:#fff;
+    box-shadow:0 20px 40px rgba(0,0,0,0.35);
+    transform: translateY(40px) scale(.95);
+    opacity:0;
+    transition: transform 900ms cubic-bezier(.2,.9,.3,1), opacity 900ms ease;
+    z-index:1;
+  }
+  section.visible .cutout{
+    transform: translateY(0) scale(1);
+    opacity:1;
+  }
+
+  .caption{
+    position:absolute;
+    left: calc(50% + 280px);
+    top:50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.98);
+    color: var(--muted);
+    padding:18px 26px;
+    border-radius:12px;
+    font-size:2rem;
+    font-weight:700;
+    max-width:320px;
+    line-height:1.2;
+    box-shadow:0 8px 24px rgba(0,0,0,0.25);
+    opacity:0;
+    transition: opacity .9s .3s ease;
+    z-index:2;
+  }
+  section.visible .caption{ opacity:1; }
+  .caption::after{
+    content:"";
+    position:absolute;
+    left:-18px;
+    top:50%;
+    transform:translateY(-50%);
+    border-width:12px 18px 12px 0;
+    border-style:solid;
+    border-color: transparent rgba(255,255,255,0.98) transparent transparent;
+  }
+
+  @media (max-width:900px){
+    .caption{ position:relative; left:0; transform:none; margin-top:18px; top:auto; }
+    .caption::after{ display:none; }
+  }
+
+  /* unobtrusive status/hint */
+  #hint {
+    position:fixed;
+    left:12px;
+    bottom:12px;
+    background: rgba(0,0,0,0.5);
+    color:#fff;
+    padding:8px 12px;
+    border-radius:10px;
+    font-size:13px;
+    z-index:10000;
+    backdrop-filter: blur(4px);
+    pointer-events:none;
+  }
+  #hint.hidden { display:none; }
+</style>
+</head>
+<body>
+
+<!-- audio (CORS-friendly test file) -->
+<audio id="bg-music" src="https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3" loop preload="auto"></audio>
+
+<canvas id="neural-bg" aria-hidden="true"></canvas>
+<div class="bg-overlay" aria-hidden="true"></div>
+
+<!-- content -->
+<section><img class="cutout" src="https://pngimg.com/uploads/apple/apple_PNG12406.png" alt="Apple"><div class="caption">Fresh & Groovy<br>Apple!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/banana/banana_PNG842.png" alt="Banana"><div class="caption">The Yellow<br>Vibe of Happiness!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/orange/orange_PNG798.png" alt="Orange"><div class="caption">Juicy<br>Orange Power!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/strawberry/strawberry_PNG2639.png" alt="Strawberry"><div class="caption">Sweet & Red<br>Berry Bliss!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/kiwi/kiwi_PNG4032.png" alt="Kiwi"><div class="caption">Green & Zesty<br>Kiwi Kick!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/watermelon/watermelon_PNG234.png" alt="Watermelon"><div class="caption">Cool & Refreshing<br>Watermelon!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/pineapple/pineapple_PNG440.png" alt="Pineapple"><div class="caption">Tropical<br>Pineapple Fun!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/mango/mango_PNG916.png" alt="Mango"><div class="caption">Golden Sweet<br>Mango Magic!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/peach/peach_PNG555.png" alt="Peach"><div class="caption">Soft & Juicy<br>Peach Treat!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/cherry/cherry_PNG637.png" alt="Cherry"><div class="caption">Cute & Sweet<br>Cherry Love!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/grape/grape_PNG2966.png" alt="Grapes"><div class="caption">Bunch of<br>Grape Joy!</div></section>
+<section><img class="cutout" src="https://pngimg.com/uploads/papaya/papaya_PNG42.png" alt="Papaya"><div class="caption">Tropical & Fresh<br>Papaya!</div></section>
+
+<!-- hint that disappears after start -->
+<div id="hint">Click / tap / press any key / scroll once to start music & auto-scroll</div>
+
+<script>
+/* =========================
+   Neural mesh (reduced points, black dots)
+   ========================= */
+const canvas = document.getElementById('neural-bg');
+const ctx = canvas.getContext('2d');
+let W = innerWidth, H = innerHeight, DPR = Math.max(1, devicePixelRatio || 1);
+const POINTS = 30; // reduced density
+const MAX_DIST = 160;
+let points = [], mouse = { x: W/2, y: H/2, active:false };
+
+function setSize(){
+  W = innerWidth; H = innerHeight; DPR = Math.max(1, devicePixelRatio || 1);
+  canvas.width = Math.floor(W * DPR); canvas.height = Math.floor(H * DPR);
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  ctx.setTransform(1,0,0,1,0,0); ctx.scale(DPR, DPR);
+}
+setSize();
+addEventListener('resize', setSize);
+
+function resetPoints(){
+  points = [];
+  for(let i=0;i<POINTS;i++){
+    points.push({
+      x: Math.random()*W,
+      y: Math.random()*H,
+      vx: (Math.random()-0.5)*1.0,
+      vy: (Math.random()-0.5)*1.0,
+      id: i
+    });
+  }
+}
+resetPoints();
+
+window.addEventListener('pointermove', e=>{ mouse.x = e.clientX; mouse.y = e.clientY; mouse.active = true; });
+window.addEventListener('pointerdown', ()=>mouse.active = true);
+window.addEventListener('pointerleave', ()=>mouse.active = false);
+
+function meshLoop(){
+  ctx.fillStyle = '#888888'; // grey background
+  ctx.fillRect(0,0,W,H);
+
+  const t = performance.now();
+
+  // move
+  for(const p of points){
+    p.vx += (Math.sin((t*0.0006)+p.id) + (Math.random()-0.5)*0.2) * 0.0008;
+    p.vy += (Math.cos((t*0.0009)+p.id) + (Math.random()-0.5)*0.2) * 0.0008;
+    p.x += p.vx; p.y += p.vy;
+    if(p.x < -20) p.x = W + 10;
+    if(p.x > W + 20) p.x = -10;
+    if(p.y < -20) p.y = H + 10;
+    if(p.y > H + 20) p.y = -10;
+
+    if(mouse.active){
+      const dx = mouse.x - p.x, dy = mouse.y - p.y;
+      const d = Math.hypot(dx,dy) || 1;
+      if(d < 160){
+        const pull = (160 - d) / 160;
+        p.vx += (dx/d) * 0.03 * pull;
+        p.vy += (dy/d) * 0.03 * pull;
+      }
+    }
+  }
+
+  // draw lines
+  for(let i=0;i<points.length;i++){
+    for(let j=i+1;j<points.length;j++){
+      const a = points[i], b = points[j];
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const d2 = dx*dx + dy*dy;
+      if(d2 < MAX_DIST*MAX_DIST){
+        const alpha = 1 - Math.sqrt(d2)/MAX_DIST;
+        ctx.strokeStyle = `rgba(255,255,255,${(alpha*0.85).toFixed(3)})`;
+        ctx.lineWidth = Math.max(0.35, alpha*1.2);
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // nodes: black points
+  for(const p of points){
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  requestAnimationFrame(meshLoop);
+}
+meshLoop();
+
+/* =========================
+   Scroll reveal using IntersectionObserver
+   ========================= */
+const sections = document.querySelectorAll('section');
+const io = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if(e.isIntersecting) e.target.classList.add('visible');
+    else e.target.classList.remove('visible');
+  });
+}, { threshold: 0.35 });
+sections.forEach(s => io.observe(s));
+
+/* =========================
+   Robust Auto-scroll + Music start on first meaningful interaction
+   - listens for pointerdown, touchstart, keydown, wheel
+   - if user scrolls manually (wheel/touchmove) we also start
+   ========================= */
+const music = document.getElementById('bg-music');
+let autoScrollActive = false;
+let rafId = null;
+const speed = 0.9; // px per frame
+
+function autoScrollStep(){
+  if(!autoScrollActive) return;
+  const maxY = document.documentElement.scrollHeight - window.innerHeight;
+  if(window.scrollY >= maxY - 1){
+    // jump to top instantly and continue
+    window.scrollTo(0, 0);
+  } else {
+    window.scrollBy(0, speed);
+  }
+  rafId = requestAnimationFrame(autoScrollStep);
+}
+
+const hint = document.getElementById('hint');
+
+async function startOnInteraction(e){
+  // remove listeners once fired
+  window.removeEventListener('pointerdown', startOnInteraction, true);
+  window.removeEventListener('touchstart', startOnInteraction, true);
+  window.removeEventListener('keydown', startOnInteraction, true);
+  window.removeEventListener('wheel', startOnInteraction, true);
+
+  // attempt to play audio (some browsers require user gesture)
+  try {
+    await music.play();
+    // console.log('music playing');
+  } catch(err){
+    console.warn('Music play blocked or failed:', err);
+    // still proceed with auto-scroll
+  }
+
+  // start auto-scroll if not running
+  if(!autoScrollActive){
+    autoScrollActive = true;
+    rafId = requestAnimationFrame(autoScrollStep);
+  }
+
+  // hide hint after starting
+  if(hint) {
+    hint.classList.add('hidden');
+    setTimeout(()=> hint.remove(), 800); // remove from DOM shortly after
+  }
+}
+
+// register many possible user gestures (capture to ensure we see early)
+window.addEventListener('pointerdown', startOnInteraction, { once:true, capture:true });
+window.addEventListener('touchstart', startOnInteraction, { once:true, capture:true });
+window.addEventListener('keydown', startOnInteraction, { once:true, capture:true });
+window.addEventListener('wheel', startOnInteraction, { once:true, passive:true, capture:true });
+
+/* Optional: double-click to toggle pause/resume */
+window.addEventListener('dblclick', () => {
+  autoScrollActive = !autoScrollActive;
+  if(autoScrollActive) rafId = requestAnimationFrame(autoScrollStep);
+});
+
+/* Ensure page can scroll */
+document.documentElement.style.overflowY = 'auto';
+</script>
+</body>
+</html>
